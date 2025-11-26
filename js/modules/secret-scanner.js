@@ -160,169 +160,172 @@ function calculateConfidence(type, match, entropy) {
     return Math.min(100, Math.max(0, score));
 }
 
+export function scanContent(content, url) {
+    const results = [];
+    if (!content) return results;
+
+    for (const [name, pattern] of Object.entries(SECRET_REGEXES)) {
+        try {
+            const regex = new RegExp(pattern, 'g');
+            let match;
+            while ((match = regex.exec(content)) !== null) {
+                const matchedStr = match[0];
+
+                // Check if this match is part of base64 data by looking at context
+                const contextStart = Math.max(0, match.index - 50);
+                const contextEnd = Math.min(content.length, match.index + matchedStr.length + 50);
+                const context = content.substring(contextStart, contextEnd);
+
+                // Skip if surrounded by base64 indicators
+                if (/base64,|data:image|;base64|"publicKey"|"data":|iVBOR|AAAA|\/png|\/jpeg|\/jpg/i.test(context)) {
+                    continue;
+                }
+
+                // Enhanced JWT filtering
+                if (name === 'json_web_token') {
+                    if (!matchedStr.startsWith('ey')) continue;
+                    const parts = matchedStr.split('.');
+                    if (parts.length !== 3) continue;
+                    if (!parts[1].startsWith('ey')) continue;
+
+                    // Check against common JS patterns
+                    let isJSPattern = false;
+                    for (const jsPattern of JS_METHOD_PATTERNS) {
+                        if (jsPattern.test(matchedStr)) {
+                            isJSPattern = true;
+                            break;
+                        }
+                    }
+                    if (isJSPattern) continue;
+
+                    // Each segment should be at least 10 chars
+                    if (parts.some(p => p.length < 10)) continue;
+
+                    // Check entropy of each part
+                    if (parts.some(p => getEntropy(p) < 3.5)) continue;
+                }
+
+                // Enhanced Bitcoin address validation
+                if (name === 'bitcoin_address') {
+                    // Must be valid Base58 (no 0, O, I, l)
+                    if (!isValidBase58(matchedStr)) continue;
+
+                    // Check entropy - real Bitcoin addresses have good entropy
+                    if (getEntropy(matchedStr) < 3.8) continue;
+
+                    // Shouldn't have too many repeated characters
+                    if (/([a-zA-Z0-9])\1{3,}/.test(matchedStr)) continue;
+
+                    // Check if it looks like it's part of base64 by checking for mixed case patterns
+                    // Real Bitcoin addresses are Base58, base64 image data has different patterns
+                    const hasLowerUpper = /[a-z]/.test(matchedStr) && /[A-Z]/.test(matchedStr);
+                    const hasDigits = /\d/.test(matchedStr);
+                    // If it has all three but looks too random, might be base64 fragment
+                    if (hasLowerUpper && hasDigits && getEntropy(matchedStr) > 4.5) continue;
+                }
+
+                // Enhanced Amazon Secret Key filtering
+                if (name === 'amazon_secret_key') {
+                    // 1. Check if it's a SHA-1 hash (common in source maps, cache keys)
+                    if (isSHA1Hash(matchedStr)) continue;
+
+                    // 2. Check if it's URL-encoded text
+                    if (hasURLEncoding(matchedStr)) continue;
+
+                    // 3. Check if it's a camelCase/PascalCase identifier
+                    if (isCamelOrPascalCase(matchedStr)) continue;
+
+                    // 4. Check if it looks like binary base64 data
+                    if (looksLikeBinaryBase64(matchedStr)) continue;
+
+                    // 5. Real AWS secret keys are base64 but NOT typical image/binary base64
+                    // They should be alphanumeric with occasional +/ but not excessive
+                    const upperCount = (matchedStr.match(/[A-Z]/g) || []).length;
+                    const lowerCount = (matchedStr.match(/[a-z]/g) || []).length;
+                    const digitCount = (matchedStr.match(/\d/g) || []).length;
+
+                    // If it's mostly one type, likely not a real key
+                    if (upperCount > 30 || lowerCount > 30 || digitCount > 30) continue;
+
+                    // 6. AWS keys should have balanced character distribution
+                    // Too many special chars suggests encoded binary
+                    const specialChars = (matchedStr.match(/[+/]/g) || []).length;
+                    const specialRatio = specialChars / matchedStr.length;
+                    if (specialRatio > 0.15) continue;
+
+                    // 7. Check for patterns typical in minified JS or encoded data
+                    if (/([a-zA-Z])\1{3,}/.test(matchedStr)) continue;
+                    if (/(\d)\1{3,}/.test(matchedStr)) continue;
+
+                    // 8. Should have reasonable entropy but not too high (binary data)
+                    const entropy = getEntropy(matchedStr);
+                    if (entropy < 3.5 || entropy > 5.0) continue;
+                }
+
+                // Enhanced GitHub Auth Token filtering (also 40 chars like SHA-1)
+                if (name === 'github_auth_token') {
+                    // GitHub tokens are hex, but so are SHA-1 hashes
+                    // Real GitHub tokens are less common in frontend JS
+                    // If it's a pure hex string, it's likely a hash
+                    if (isSHA1Hash(matchedStr)) continue;
+                }
+
+                // Filter out low entropy strings for other high-entropy secrets
+                if (['github_auth_token', 'square_access_token', 'google_api', 'google_captcha'].includes(name)) {
+                    if (getEntropy(matchedStr) < 4.0) continue;
+                }
+
+                // Specific check for Square Access Token
+                if (name === 'square_access_token' && matchedStr.startsWith('EAAA')) {
+                    if (/^EAAA[A-Z]+$/.test(matchedStr)) continue;
+                }
+
+                const entropy = getEntropy(matchedStr);
+                const confidence = calculateConfidence(name, matchedStr, entropy);
+
+                results.push({
+                    file: url,
+                    type: name,
+                    match: matchedStr,
+                    index: match.index,
+                    confidence: confidence
+                });
+            }
+        } catch (e) {
+            console.warn(`Invalid regex for ${name}:`, e);
+        }
+    }
+    return results;
+}
+
 export async function scanForSecrets(requests, onProgress) {
     const results = [];
-    const jsRequests = requests.filter(req => {
+    let processed = 0;
+    const total = requests.length;
+
+    for (const req of requests) {
+        // Only process JavaScript files for now
         const url = req.request.url.toLowerCase();
         const mime = req.response.content.mimeType.toLowerCase();
-        return url.endsWith('.js') || mime.includes('javascript') || mime.includes('ecmascript');
-    });
-
-    let processed = 0;
-    const total = jsRequests.length;
-
-    for (const req of jsRequests) {
-        try {
-            const content = await new Promise((resolve) => {
-                req.getContent((content, encoding) => {
-                    resolve(content);
+        if (url.endsWith('.js') || mime.includes('javascript') || mime.includes('ecmascript')) {
+            try {
+                const content = await new Promise((resolve) => {
+                    req.getContent((content, encoding) => {
+                        resolve(content);
+                    });
                 });
-            });
 
-            if (!content) {
-                processed++;
-                if (onProgress) onProgress(processed, total);
-                continue;
-            }
-
-            for (const [name, pattern] of Object.entries(SECRET_REGEXES)) {
-                try {
-                    const regex = new RegExp(pattern, 'g');
-                    let match;
-                    while ((match = regex.exec(content)) !== null) {
-                        const matchedStr = match[0];
-
-                        // Check if this match is part of base64 data by looking at context
-                        const contextStart = Math.max(0, match.index - 50);
-                        const contextEnd = Math.min(content.length, match.index + matchedStr.length + 50);
-                        const context = content.substring(contextStart, contextEnd);
-
-                        // Skip if surrounded by base64 indicators
-                        if (/base64,|data:image|;base64|"publicKey"|"data":|iVBOR|AAAA|\/png|\/jpeg|\/jpg/i.test(context)) {
-                            continue;
-                        }
-
-                        // Enhanced JWT filtering
-                        if (name === 'json_web_token') {
-                            if (!matchedStr.startsWith('ey')) continue;
-                            const parts = matchedStr.split('.');
-                            if (parts.length !== 3) continue;
-                            if (!parts[1].startsWith('ey')) continue;
-
-                            // Check against common JS patterns
-                            let isJSPattern = false;
-                            for (const jsPattern of JS_METHOD_PATTERNS) {
-                                if (jsPattern.test(matchedStr)) {
-                                    isJSPattern = true;
-                                    break;
-                                }
-                            }
-                            if (isJSPattern) continue;
-
-                            // Each segment should be at least 10 chars
-                            if (parts.some(p => p.length < 10)) continue;
-
-                            // Check entropy of each part
-                            if (parts.some(p => getEntropy(p) < 3.5)) continue;
-                        }
-
-                        // Enhanced Bitcoin address validation
-                        if (name === 'bitcoin_address') {
-                            // Must be valid Base58 (no 0, O, I, l)
-                            if (!isValidBase58(matchedStr)) continue;
-
-                            // Check entropy - real Bitcoin addresses have good entropy
-                            if (getEntropy(matchedStr) < 3.8) continue;
-
-                            // Shouldn't have too many repeated characters
-                            if (/([a-zA-Z0-9])\1{3,}/.test(matchedStr)) continue;
-
-                            // Check if it looks like it's part of base64 by checking for mixed case patterns
-                            // Real Bitcoin addresses are Base58, base64 image data has different patterns
-                            const hasLowerUpper = /[a-z]/.test(matchedStr) && /[A-Z]/.test(matchedStr);
-                            const hasDigits = /\d/.test(matchedStr);
-                            // If it has all three but looks too random, might be base64 fragment
-                            if (hasLowerUpper && hasDigits && getEntropy(matchedStr) > 4.5) continue;
-                        }
-
-                        // Enhanced Amazon Secret Key filtering
-                        if (name === 'amazon_secret_key') {
-                            // 1. Check if it's a SHA-1 hash (common in source maps, cache keys)
-                            if (isSHA1Hash(matchedStr)) continue;
-
-                            // 2. Check if it's URL-encoded text
-                            if (hasURLEncoding(matchedStr)) continue;
-
-                            // 3. Check if it's a camelCase/PascalCase identifier
-                            if (isCamelOrPascalCase(matchedStr)) continue;
-
-                            // 4. Check if it looks like binary base64 data
-                            if (looksLikeBinaryBase64(matchedStr)) continue;
-
-                            // 5. Real AWS secret keys are base64 but NOT typical image/binary base64
-                            // They should be alphanumeric with occasional +/ but not excessive
-                            const upperCount = (matchedStr.match(/[A-Z]/g) || []).length;
-                            const lowerCount = (matchedStr.match(/[a-z]/g) || []).length;
-                            const digitCount = (matchedStr.match(/\d/g) || []).length;
-
-                            // If it's mostly one type, likely not a real key
-                            if (upperCount > 30 || lowerCount > 30 || digitCount > 30) continue;
-
-                            // 6. AWS keys should have balanced character distribution
-                            // Too many special chars suggests encoded binary
-                            const specialChars = (matchedStr.match(/[+/]/g) || []).length;
-                            const specialRatio = specialChars / matchedStr.length;
-                            if (specialRatio > 0.15) continue;
-
-                            // 7. Check for patterns typical in minified JS or encoded data
-                            if (/([a-zA-Z])\1{3,}/.test(matchedStr)) continue;
-                            if (/(\d)\1{3,}/.test(matchedStr)) continue;
-
-                            // 8. Should have reasonable entropy but not too high (binary data)
-                            const entropy = getEntropy(matchedStr);
-                            if (entropy < 3.5 || entropy > 5.0) continue;
-                        }
-
-                        // Enhanced GitHub Auth Token filtering (also 40 chars like SHA-1)
-                        if (name === 'github_auth_token') {
-                            // GitHub tokens are hex, but so are SHA-1 hashes
-                            // Real GitHub tokens are less common in frontend JS
-                            // If it's a pure hex string, it's likely a hash
-                            if (isSHA1Hash(matchedStr)) continue;
-                        }
-
-                        // Filter out low entropy strings for other high-entropy secrets
-                        if (['github_auth_token', 'square_access_token', 'google_api', 'google_captcha'].includes(name)) {
-                            if (getEntropy(matchedStr) < 4.0) continue;
-                        }
-
-                        // Specific check for Square Access Token
-                        if (name === 'square_access_token' && matchedStr.startsWith('EAAA')) {
-                            if (/^EAAA[A-Z]+$/.test(matchedStr)) continue;
-                        }
-
-                        const entropy = getEntropy(matchedStr);
-                        const confidence = calculateConfidence(name, matchedStr, entropy);
-
-                        results.push({
-                            file: req.request.url,
-                            type: name,
-                            match: matchedStr,
-                            index: match.index,
-                            confidence: confidence
-                        });
-                    }
-                } catch (e) {
-                    console.warn(`Invalid regex for ${name}:`, e);
+                if (content) {
+                    const fileSecrets = scanContent(content, req.request.url);
+                    results.push(...fileSecrets);
                 }
+            } catch (err) {
+                console.error('Error scanning request:', err);
             }
-        } catch (err) {
-            console.error('Error scanning request:', err);
         }
 
         processed++;
         if (onProgress) onProgress(processed, total);
     }
-
     return results;
 }

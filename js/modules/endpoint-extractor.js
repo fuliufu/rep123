@@ -151,10 +151,72 @@ function isValidEndpoint(endpoint) {
     return true;
 }
 
-export async function extractEndpoints(requests, onProgress) {
+export function extractEndpoints(content, sourceFile) {
     const results = [];
-    const seenEndpoints = new Set(); // Deduplicate
+    const seenEndpoints = new Set();
 
+    if (!content) return results;
+
+    // Extract base URL from source file
+    let baseUrl = '';
+    try {
+        const url = new URL(sourceFile);
+        baseUrl = `${url.protocol}//${url.host}`;
+    } catch (e) {
+        // If URL parsing fails, leave baseUrl empty
+    }
+
+    // Extract endpoints using all patterns
+    for (const [patternName, pattern] of Object.entries(ENDPOINT_PATTERNS)) {
+        let match;
+        const regex = new RegExp(pattern.source, pattern.flags);
+
+        while ((match = regex.exec(content)) !== null) {
+            let endpoint = match[1] || match[2]; // Different capture groups
+
+            if (!endpoint) continue;
+
+            endpoint = normalizeEndpoint(endpoint);
+
+            if (!isValidEndpoint(endpoint)) continue;
+
+            // Create unique key for deduplication
+            const uniqueKey = `${endpoint}|${sourceFile}`;
+            if (seenEndpoints.has(uniqueKey)) continue;
+            seenEndpoints.add(uniqueKey);
+
+            // Extract method from context
+            const method = extractMethod(content, match.index, endpoint);
+
+            // Get context for confidence calculation
+            const contextStart = Math.max(0, match.index - 50);
+            const contextEnd = Math.min(content.length, match.index + 100);
+            const context = content.substring(contextStart, contextEnd);
+
+            const confidence = calculateConfidence(endpoint, method, context);
+
+            // Only include if confidence is reasonable
+            if (confidence >= 30) {
+                results.push({
+                    endpoint,
+                    method,
+                    file: sourceFile,
+                    baseUrl,
+                    confidence,
+                    patternType: patternName
+                });
+            }
+        }
+    }
+
+    // Sort by confidence (highest first)
+    results.sort((a, b) => b.confidence - a.confidence);
+
+    return results;
+}
+
+export async function extractEndpointsFromRequests(requests, onProgress) {
+    const results = [];
     const jsRequests = requests.filter(req => {
         const url = req.request.url.toLowerCase();
         const mime = req.response.content.mimeType.toLowerCase();
@@ -172,64 +234,9 @@ export async function extractEndpoints(requests, onProgress) {
                 });
             });
 
-            if (!content) {
-                processed++;
-                if (onProgress) onProgress(processed, total);
-                continue;
-            }
-
-            const sourceFile = req.request.url;
-
-            // Extract base URL from source file
-            let baseUrl = '';
-            try {
-                const url = new URL(sourceFile);
-                baseUrl = `${url.protocol}//${url.host}`;
-            } catch (e) {
-                // If URL parsing fails, leave baseUrl empty
-            }
-
-            // Extract endpoints using all patterns
-            for (const [patternName, pattern] of Object.entries(ENDPOINT_PATTERNS)) {
-                let match;
-                const regex = new RegExp(pattern.source, pattern.flags);
-
-                while ((match = regex.exec(content)) !== null) {
-                    let endpoint = match[1] || match[2]; // Different capture groups
-
-                    if (!endpoint) continue;
-
-                    endpoint = normalizeEndpoint(endpoint);
-
-                    if (!isValidEndpoint(endpoint)) continue;
-
-                    // Create unique key for deduplication
-                    const uniqueKey = `${endpoint}|${sourceFile}`;
-                    if (seenEndpoints.has(uniqueKey)) continue;
-                    seenEndpoints.add(uniqueKey);
-
-                    // Extract method from context
-                    const method = extractMethod(content, match.index, endpoint);
-
-                    // Get context for confidence calculation
-                    const contextStart = Math.max(0, match.index - 50);
-                    const contextEnd = Math.min(content.length, match.index + 100);
-                    const context = content.substring(contextStart, contextEnd);
-
-                    const confidence = calculateConfidence(endpoint, method, context);
-
-                    // Only include if confidence is reasonable
-                    if (confidence >= 30) {
-                        results.push({
-                            endpoint,
-                            method,
-                            file: sourceFile,
-                            baseUrl,
-                            confidence,
-                            patternType: patternName
-                        });
-                    }
-                }
+            if (content) {
+                const endpoints = extractEndpoints(content, req.request.url);
+                results.push(...endpoints);
             }
         } catch (err) {
             console.error('Error extracting endpoints from request:', err);
