@@ -1731,6 +1731,12 @@ export function setupUndoRedo() {
         }, 500);
     });
 
+    // Update syntax highlighting on blur
+    elements.rawRequestInput.addEventListener('blur', () => {
+        const content = elements.rawRequestInput.innerText;
+        elements.rawRequestInput.innerHTML = highlightHTTP(content);
+    });
+
     elements.rawRequestInput.addEventListener('keydown', (e) => {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         const modKey = isMac ? e.metaKey : e.ctrlKey;
