@@ -45,6 +45,16 @@ export function createPageGroup(pageUrl) {
         if (e.target.closest('.group-ai-btn') || e.target.closest('.group-star-btn') || e.target.closest('.group-delete-btn')) return;
 
         group.classList.toggle('expanded');
+
+        // If collapsing the page, also collapse third-party domain groups for cleanliness
+        if (!group.classList.contains('expanded')) {
+            const domainGroups = group.querySelectorAll('.domain-group');
+            domainGroups.forEach(domainGroup => {
+                domainGroup.classList.remove('expanded');
+                const toggle = domainGroup.querySelector('.group-toggle');
+                if (toggle) toggle.textContent = '▶';
+            });
+        }
     });
 
     // AI button handler
