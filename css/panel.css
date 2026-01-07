@@ -1169,11 +1169,13 @@ body.theme-transitioning img {
     flex: 1;
     border-right: 1px solid var(--border-color);
     min-width: 200px;
+    overflow-x: hidden;
 }
 
 .response-pane {
     flex: 1;
     min-width: 200px;
+    overflow-x: hidden;
 }
 
 .llm-chat-pane {
@@ -3674,6 +3676,10 @@ pre {
     height: 100%;
     padding: 10px;
     outline: none;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 /* Hex Display */
@@ -3685,9 +3691,47 @@ pre {
     background: var(--bg-primary);
     padding: 10px;
     margin: 0;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     height: 100%;
-    white-space: pre;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
+.request-pane .view-content,
+.response-pane .view-content {
+    overflow-x: hidden;
+}
+
+.request-pane *,
+.response-pane * {
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+.request-pane pre,
+.response-pane pre,
+.request-pane code,
+.response-pane code,
+.request-pane textarea,
+.response-pane textarea,
+.request-pane .editor,
+.response-pane .editor,
+#raw-request-input,
+#raw-response-display,
+#raw-response-text,
+#res-hex-display,
+#res-json-display {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+#res-json-display {
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 /* Theme Selector */
