@@ -23,7 +23,7 @@ const MAX_RESPONSE_TOKENS = 1500; // ~6KB of text (roughly 1500 tokens)
 const MAX_CHAT_HISTORY = 15; // Keep last 15 messages (reduced from 20)
 const TOKEN_ESTIMATE_CHARS = 4; // Rough estimate: 1 token ≈ 4 characters
 
-const SYSTEM_PROMPT = `You are a helpful assistant for working with HTTP requests and responses. You have access to the currently selected request and response, which will be provided in the conversation context.
+const SYSTEM_PROMPT_BASE = `You are a helpful assistant for working with HTTP requests and responses. You have access to the currently selected request and response, which will be provided in the conversation context.
 
 You can help with:
 - Security testing and penetration testing (identifying vulnerabilities, attack vectors, security improvements)
@@ -41,9 +41,12 @@ Important technical requirements:
 - When providing a full request, include all headers and the body
 - Preserve the existing request structure when making modifications
 
-Be friendly, helpful, and clear in your explanations.
+Be friendly, helpful, and clear in your explanations.`;
 
-Respond in Chinese.`;
+function buildSystemPrompt(forceChinese) {
+    if (!forceChinese) return SYSTEM_PROMPT_BASE;
+    return `${SYSTEM_PROMPT_BASE}\n\nRespond in Chinese.`;
+}
 
 function formatRequestForContext(request) {
     if (!request || !request.request) return '';
@@ -398,7 +401,8 @@ function compressChatHistory() {
 
 function getConversationMessages() {
     // Build conversation from history, starting with system prompt
-    const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+    const settings = getAISettings();
+    const messages = [{ role: 'system', content: buildSystemPrompt(settings.forceChinese) }];
     
     // Compress history if needed
     const compressedHistory = compressChatHistory();
@@ -437,7 +441,7 @@ async function sendChatMessage(userMessage, loadingElement, onUpdate, onComplete
         
         // Build proper message array for rolling context
         // Start with system prompt
-        const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+        const messages = [{ role: 'system', content: buildSystemPrompt(settings.forceChinese) }];
         
         // Compress and add conversation history (previous turns)
         const compressedHistory = compressChatHistory();
