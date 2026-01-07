@@ -1163,6 +1163,9 @@ body.theme-transitioning img {
     flex-direction: column;
     min-width: 0;
     overflow: hidden;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 .request-pane {
@@ -1832,6 +1835,8 @@ tr.selected {
     overflow: hidden;
     min-width: 0;
     overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 /* Editor */
@@ -1843,6 +1848,8 @@ tr.selected {
     min-height: 0;
     min-width: 0;
     overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 .editor-container {
@@ -1855,6 +1862,8 @@ tr.selected {
     min-height: 0;
     min-width: 0;
     overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 #raw-request-input {
@@ -2101,6 +2110,9 @@ tr.selected {
     flex: 1;
     padding: 0;
     overflow: hidden;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 .tab-content.active {
@@ -2121,6 +2133,7 @@ textarea {
     outline: none;
     border-radius: var(--radius-md);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-x: hidden;
 }
 
 textarea:focus {
@@ -2134,6 +2147,9 @@ pre {
     overflow: auto;
     font-family: 'Consolas', 'Monaco', monospace;
     font-size: 12px;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 #raw-response-display {
@@ -3655,6 +3671,9 @@ pre {
     height: 100%;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 .view-content.active {
