@@ -116,6 +116,7 @@ export function setupAIFeatures(elements) {
     const localSettings = document.getElementById('local-settings');
     const localApiUrlInput = document.getElementById('local-api-url');
     const localModelInput = document.getElementById('local-model');
+    const forceChineseToggle = document.getElementById('ai-force-chinese');
     const aiMenuBtn = document.getElementById('ai-menu-btn');
     const aiMenuDropdown = document.getElementById('ai-menu-dropdown');
     const explainBtn = document.getElementById('explain-btn');
@@ -220,9 +221,10 @@ export function setupAIFeatures(elements) {
 
     if (settingsBtn) {
         settingsBtn.addEventListener('click', () => {
-            const { provider, apiKey, model } = getAISettings();
+            const { provider, apiKey, model, forceChinese } = getAISettings();
 
             if (aiProviderSelect) aiProviderSelect.value = provider;
+            if (forceChineseToggle) forceChineseToggle.checked = forceChinese;
 
             anthropicSettings.style.display = 'none';
             deepseekSettings.style.display = 'none';
@@ -259,6 +261,7 @@ export function setupAIFeatures(elements) {
         saveSettingsBtn.addEventListener('click', () => {
             const provider = aiProviderSelect ? aiProviderSelect.value : 'anthropic';
             let key, model;
+            const forceChinese = forceChineseToggle ? forceChineseToggle.checked : true;
 
             if (provider === 'deepseek') {
                 key = deepseekApiKeyInput.value.trim();
@@ -275,7 +278,7 @@ export function setupAIFeatures(elements) {
             }
 
             if (key && (provider !== 'local' || model)) {
-                saveAISettings(provider, key, model);
+                saveAISettings(provider, key, model, forceChinese);
                 alert('Settings saved!');
                 settingsModal.style.display = 'none';
             } else if (provider === 'local' && !model) {

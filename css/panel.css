@@ -1170,12 +1170,16 @@ body.theme-transitioning img {
     border-right: 1px solid var(--border-color);
     min-width: 200px;
     overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 .response-pane {
     flex: 1;
     min-width: 200px;
     overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
 }
 
 .llm-chat-pane {
@@ -1400,6 +1404,19 @@ body.theme-transitioning img {
     margin-bottom: 5px;
     font-size: 12px;
     color: #9aa0a6;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #9aa0a6;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin: 0;
 }
 
 .form-control {
@@ -3709,6 +3726,15 @@ pre {
     max-width: 100%;
     box-sizing: border-box;
     overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
+}
+
+.request-pane::-webkit-scrollbar:horizontal,
+.response-pane::-webkit-scrollbar:horizontal,
+.request-pane *::-webkit-scrollbar:horizontal,
+.response-pane *::-webkit-scrollbar:horizontal {
+    height: 0;
 }
 
 .request-pane pre,

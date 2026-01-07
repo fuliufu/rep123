@@ -1,8 +1,20 @@
 // AI Core Module - Generic LLM wrapper and provider abstraction
 
 const CHINESE_RESPONSE_INSTRUCTION = 'Respond in Chinese.';
+const FORCE_CHINESE_SETTING_KEY = 'ai_force_chinese';
+
+function shouldForceChineseResponses() {
+    const stored = localStorage.getItem(FORCE_CHINESE_SETTING_KEY);
+    if (stored === null) return true;
+    return stored === 'true';
+}
+
+function getDefaultSystemPrompt() {
+    return shouldForceChineseResponses() ? CHINESE_RESPONSE_INSTRUCTION : '';
+}
 
 function appendChineseInstruction(prompt) {
+    if (!shouldForceChineseResponses()) return prompt || '';
     if (!prompt) return CHINESE_RESPONSE_INSTRUCTION;
     if (prompt.includes(CHINESE_RESPONSE_INSTRUCTION)) return prompt;
     return `${prompt}\n\n${CHINESE_RESPONSE_INSTRUCTION}`;
@@ -10,12 +22,14 @@ function appendChineseInstruction(prompt) {
 
 export function getAISettings() {
     const provider = localStorage.getItem('ai_provider') || 'anthropic';
+    const forceChinese = shouldForceChineseResponses();
 
     if (provider === 'deepseek') {
         return {
             provider: 'deepseek',
             apiKey: localStorage.getItem('deepseek_api_key') || '',
-            model: localStorage.getItem('deepseek_model') || 'deepseek-chat'
+            model: localStorage.getItem('deepseek_model') || 'deepseek-chat',
+            forceChinese
         };
     }
 
@@ -23,7 +37,8 @@ export function getAISettings() {
         return {
             provider: 'gemini',
             apiKey: localStorage.getItem('gemini_api_key') || '',
-            model: localStorage.getItem('gemini_model') || 'gemini-flash-latest'
+            model: localStorage.getItem('gemini_model') || 'gemini-flash-latest',
+            forceChinese
         };
     }
 
@@ -31,14 +46,16 @@ export function getAISettings() {
         return {
             provider: 'local',
             apiKey: localStorage.getItem('local_api_url') || 'http://localhost:11434/api/generate',
-            model: localStorage.getItem('local_model') || ''
+            model: localStorage.getItem('local_model') || '',
+            forceChinese
         };
     }
 
     return {
         provider: 'anthropic',
         apiKey: localStorage.getItem('anthropic_api_key') || '',
-        model: localStorage.getItem('anthropic_model') || 'claude-sonnet-4-5-20250929'
+        model: localStorage.getItem('anthropic_model') || 'claude-sonnet-4-5-20250929',
+        forceChinese
     };
 }
 
@@ -121,8 +138,11 @@ export async function fetchGeminiModels(apiKey) {
     }
 }
 
-export function saveAISettings(provider, apiKey, model) {
+export function saveAISettings(provider, apiKey, model, forceChinese) {
     localStorage.setItem('ai_provider', provider);
+    if (typeof forceChinese === 'boolean') {
+        localStorage.setItem(FORCE_CHINESE_SETTING_KEY, String(forceChinese));
+    }
 
     if (provider === 'deepseek') {
         localStorage.setItem('deepseek_api_key', apiKey);
@@ -399,7 +419,7 @@ export async function streamExplanationFromDeepseekWithSystem(apiKey, model, sys
 export async function streamChatFromClaudeWithMessages(apiKey, model, messages, onUpdate) {
     // Separate system message from conversation messages
     const systemMessage = messages.find(m => m.role === 'system');
-    const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : CHINESE_RESPONSE_INSTRUCTION;
+    const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : getDefaultSystemPrompt();
     const conversationMessages = messages.filter(m => m.role !== 'system');
     
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -460,7 +480,12 @@ export async function streamChatFromClaudeWithMessages(apiKey, model, messages, 
  * Stream chat from DeepSeek with proper message history
  */
 export async function streamChatFromDeepseekWithMessages(apiKey, model, messages, onUpdate) {
-    const adjustedMessages = messages.map(message => {
+    let adjustedMessages = messages;
+    if (!messages.some(message => message.role === 'system') && shouldForceChineseResponses()) {
+        adjustedMessages = [{ role: 'system', content: CHINESE_RESPONSE_INSTRUCTION }, ...messages];
+    }
+
+    adjustedMessages = adjustedMessages.map(message => {
         if (message.role !== 'system') return message;
         return { ...message, content: appendChineseInstruction(message.content) };
     });
@@ -483,7 +508,7 @@ export async function streamChatFromGeminiWithMessages(apiKey, model, messages, 
     // Gemini uses a different format - convert messages
     // System message is prepended to first user message
     const systemMessage = messages.find(m => m.role === 'system');
-    const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : CHINESE_RESPONSE_INSTRUCTION;
+    const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : getDefaultSystemPrompt();
     const conversationMessages = messages.filter(m => m.role !== 'system');
     
     // Build contents array for Gemini (alternating user/model)
@@ -492,7 +517,7 @@ export async function streamChatFromGeminiWithMessages(apiKey, model, messages, 
     for (const msg of conversationMessages) {
         if (msg.role === 'user') {
             // Add system prompt to first user message if available
-            const text = contents.length === 0
+            const text = contents.length === 0 && systemPrompt
                 ? `${systemPrompt}\n\n${msg.content}`
                 : msg.content;
             contents.push({ role: 'user', parts: [{ text }] });
@@ -1027,12 +1052,12 @@ export async function streamChatFromLocalWithMessages(apiKey, model, messages, o
         // Convert messages to Ollama format
         // Ollama expects: { model, messages: [{ role, content }], stream: true }
         const systemMessage = messages.find(m => m.role === 'system');
-        const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : CHINESE_RESPONSE_INSTRUCTION;
+        const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : getDefaultSystemPrompt();
         const conversationMessages = messages.filter(m => m.role !== 'system');
         
         // Prepend system message to first user message if available
         const formattedMessages = conversationMessages.map((msg, index) => {
-            if (index === 0 && msg.role === 'user') {
+            if (index === 0 && msg.role === 'user' && systemPrompt) {
                 return {
                     role: 'user',
                     content: `${systemPrompt}\n\n${msg.content}`
