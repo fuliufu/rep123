@@ -609,6 +609,10 @@ function reRenderDomainRequests(pageHostname) {
     const pageGroup = document.getElementById(pageGroupId);
 
     if (pageGroup) {
+        const pageCountSpan = pageGroup.querySelector('.page-count');
+        if (pageCountSpan) {
+            pageCountSpan.textContent = '(0)';
+        }
         const pageContent = pageGroup.querySelector('.page-content');
         if (pageContent) {
             pageContent.innerHTML = ''; // Clear attack surface view
@@ -956,4 +960,3 @@ export function filterRequests() {
         emptyState.style.display = 'none';
     }
 }
-
