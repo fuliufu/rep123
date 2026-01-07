@@ -41,7 +41,9 @@ Important technical requirements:
 - When providing a full request, include all headers and the body
 - Preserve the existing request structure when making modifications
 
-Be friendly, helpful, and clear in your explanations.`;
+Be friendly, helpful, and clear in your explanations.
+
+Respond in Chinese.`;
 
 function formatRequestForContext(request) {
     if (!request || !request.request) return '';
@@ -854,7 +856,7 @@ export function setupLLMChat(elements) {
                         // Sort suggestions: full_request first, then headers, then body
                         suggestions.sort((a, b) => {
                             const order = { 'full_request': 0, 'header': 1, 'body': 2, 'structured': 3 };
-                            return (order[a.type] || 99) - (order[b.type] || 99);
+                            return (order[a.type] ?? 99) - (order[b.type] ?? 99);
                         });
                         
                         // Show buttons for all suggestions (no auto-apply)
@@ -1812,4 +1814,3 @@ export function setupLLMChat(elements) {
         }
     }
 }
-
