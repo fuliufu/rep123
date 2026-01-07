@@ -3674,6 +3674,10 @@ pre {
     height: 100%;
     padding: 10px;
     outline: none;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 /* Hex Display */
@@ -3685,9 +3689,25 @@ pre {
     background: var(--bg-primary);
     padding: 10px;
     margin: 0;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     height: 100%;
-    white-space: pre;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
+.request-pane .view-content,
+.response-pane .view-content {
+    overflow-x: hidden;
+}
+
+#res-json-display {
+    overflow-y: auto;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 /* Theme Selector */
