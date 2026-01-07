@@ -106,9 +106,12 @@ export function setupAIFeatures(elements) {
     const aiProviderSelect = document.getElementById('ai-provider');
     const anthropicApiKeyInput = document.getElementById('anthropic-api-key');
     const anthropicModelSelect = document.getElementById('anthropic-model');
+    const deepseekApiKeyInput = document.getElementById('deepseek-api-key');
+    const deepseekModelSelect = document.getElementById('deepseek-model');
     const geminiApiKeyInput = document.getElementById('gemini-api-key');
     const geminiModelSelect = document.getElementById('gemini-model');
     const anthropicSettings = document.getElementById('anthropic-settings');
+    const deepseekSettings = document.getElementById('deepseek-settings');
     const geminiSettings = document.getElementById('gemini-settings');
     const localSettings = document.getElementById('local-settings');
     const localApiUrlInput = document.getElementById('local-api-url');
@@ -190,10 +193,13 @@ export function setupAIFeatures(elements) {
         aiProviderSelect.addEventListener('change', () => {
             const provider = aiProviderSelect.value;
             anthropicSettings.style.display = 'none';
+            deepseekSettings.style.display = 'none';
             geminiSettings.style.display = 'none';
             localSettings.style.display = 'none';
             
-            if (provider === 'gemini') {
+            if (provider === 'deepseek') {
+                deepseekSettings.style.display = 'block';
+            } else if (provider === 'gemini') {
                 geminiSettings.style.display = 'block';
                 // Try to auto-load models if API key is present
                 const key = geminiApiKeyInput ? geminiApiKeyInput.value.trim() : '';
@@ -219,10 +225,15 @@ export function setupAIFeatures(elements) {
             if (aiProviderSelect) aiProviderSelect.value = provider;
 
             anthropicSettings.style.display = 'none';
+            deepseekSettings.style.display = 'none';
             geminiSettings.style.display = 'none';
             localSettings.style.display = 'none';
 
-            if (provider === 'gemini') {
+            if (provider === 'deepseek') {
+                if (deepseekApiKeyInput) deepseekApiKeyInput.value = apiKey;
+                if (deepseekModelSelect) deepseekModelSelect.value = model;
+                deepseekSettings.style.display = 'block';
+            } else if (provider === 'gemini') {
                 geminiApiKeyInput.value = apiKey;
                 if (geminiModelSelect) geminiModelSelect.value = model;
                 geminiSettings.style.display = 'block';
@@ -249,7 +260,10 @@ export function setupAIFeatures(elements) {
             const provider = aiProviderSelect ? aiProviderSelect.value : 'anthropic';
             let key, model;
 
-            if (provider === 'gemini') {
+            if (provider === 'deepseek') {
+                key = deepseekApiKeyInput.value.trim();
+                model = deepseekModelSelect ? deepseekModelSelect.value : 'deepseek-chat';
+            } else if (provider === 'gemini') {
                 key = geminiApiKeyInput.value.trim();
                 model = geminiModelSelect ? geminiModelSelect.value : 'gemini-flash-latest';
             } else if (provider === 'local') {

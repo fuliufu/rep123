@@ -1,7 +1,23 @@
 // AI Core Module - Generic LLM wrapper and provider abstraction
 
+const CHINESE_RESPONSE_INSTRUCTION = 'Respond in Chinese.';
+
+function appendChineseInstruction(prompt) {
+    if (!prompt) return CHINESE_RESPONSE_INSTRUCTION;
+    if (prompt.includes(CHINESE_RESPONSE_INSTRUCTION)) return prompt;
+    return `${prompt}\n\n${CHINESE_RESPONSE_INSTRUCTION}`;
+}
+
 export function getAISettings() {
     const provider = localStorage.getItem('ai_provider') || 'anthropic';
+
+    if (provider === 'deepseek') {
+        return {
+            provider: 'deepseek',
+            apiKey: localStorage.getItem('deepseek_api_key') || '',
+            model: localStorage.getItem('deepseek_model') || 'deepseek-chat'
+        };
+    }
 
     if (provider === 'gemini') {
         return {
@@ -108,7 +124,10 @@ export async function fetchGeminiModels(apiKey) {
 export function saveAISettings(provider, apiKey, model) {
     localStorage.setItem('ai_provider', provider);
 
-    if (provider === 'gemini') {
+    if (provider === 'deepseek') {
+        localStorage.setItem('deepseek_api_key', apiKey);
+        localStorage.setItem('deepseek_model', model);
+    } else if (provider === 'gemini') {
         localStorage.setItem('gemini_api_key', apiKey);
         localStorage.setItem('gemini_model', model);
     } else if (provider === 'local') {
@@ -121,6 +140,9 @@ export function saveAISettings(provider, apiKey, model) {
 }
 
 export async function streamExplanation(apiKey, model, request, onUpdate, provider = 'anthropic') {
+    if (provider === 'deepseek') {
+        return streamExplanationFromDeepseek(apiKey, model, request, onUpdate);
+    }
     if (provider === 'gemini') {
         return streamExplanationFromGemini(apiKey, model, request, onUpdate);
     }
@@ -131,13 +153,18 @@ export async function streamExplanation(apiKey, model, request, onUpdate, provid
 }
 
 export async function streamExplanationWithSystem(apiKey, model, systemPrompt, userPrompt, onUpdate, provider = 'anthropic') {
+    const adjustedSystemPrompt = appendChineseInstruction(systemPrompt);
+
+    if (provider === 'deepseek') {
+        return streamExplanationFromDeepseekWithSystem(apiKey, model, adjustedSystemPrompt, userPrompt, onUpdate);
+    }
     if (provider === 'gemini') {
-        return streamExplanationFromGeminiWithSystem(apiKey, model, systemPrompt, userPrompt, onUpdate);
+        return streamExplanationFromGeminiWithSystem(apiKey, model, adjustedSystemPrompt, userPrompt, onUpdate);
     }
     if (provider === 'local') {
-        return streamExplanationFromLocalWithSystem(apiKey, model, systemPrompt, userPrompt, onUpdate);
+        return streamExplanationFromLocalWithSystem(apiKey, model, adjustedSystemPrompt, userPrompt, onUpdate);
     }
-    return streamExplanationFromClaudeWithSystem(apiKey, model, systemPrompt, userPrompt, onUpdate);
+    return streamExplanationFromClaudeWithSystem(apiKey, model, adjustedSystemPrompt, userPrompt, onUpdate);
 }
 
 /**
@@ -146,9 +173,12 @@ export async function streamExplanationWithSystem(apiKey, model, systemPrompt, u
  * @param {string} model - Model name
  * @param {Array} messages - Array of { role: 'system'|'user'|'assistant', content: string }
  * @param {Function} onUpdate - Callback for streaming updates
- * @param {string} provider - Provider name ('anthropic', 'gemini', 'local')
+ * @param {string} provider - Provider name ('anthropic', 'deepseek', 'gemini', 'local')
  */
 export async function streamChatWithMessages(apiKey, model, messages, onUpdate, provider = 'anthropic') {
+    if (provider === 'deepseek') {
+        return streamChatFromDeepseekWithMessages(apiKey, model, messages, onUpdate);
+    }
     if (provider === 'gemini') {
         return streamChatFromGeminiWithMessages(apiKey, model, messages, onUpdate);
     }
@@ -159,7 +189,7 @@ export async function streamChatWithMessages(apiKey, model, messages, onUpdate, 
 }
 
 export async function streamExplanationFromClaude(apiKey, model, request, onUpdate) {
-    const systemPrompt = "You are an expert security researcher and web developer. Explain the following HTTP request in detail, highlighting interesting parameters, potential security implications, and what this request is likely doing. Be concise but thorough.";
+    const systemPrompt = appendChineseInstruction("You are an expert security researcher and web developer. Explain the following HTTP request in detail, highlighting interesting parameters, potential security implications, and what this request is likely doing. Be concise but thorough.");
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -274,12 +304,102 @@ export async function streamExplanationFromClaudeWithSystem(apiKey, model, syste
     return fullText;
 }
 
+async function streamDeepseekChat(apiKey, payload, onUpdate) {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+            ...payload,
+            stream: true
+        })
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        let message = errorText;
+        try {
+            const errorData = JSON.parse(errorText);
+            message = errorData.error?.message || message;
+        } catch (e) {
+            // Ignore parse errors for non-JSON responses
+        }
+        throw new Error(message || 'Failed to communicate with DeepSeek API');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const dataStr = line.replace(/^data:\s*/, '').trim();
+            if (!dataStr || dataStr === '[DONE]') continue;
+
+            try {
+                const data = JSON.parse(dataStr);
+                const delta = data.choices?.[0]?.delta;
+                const text = delta?.content || delta?.reasoning_content;
+                if (text) {
+                    fullText += text;
+                    onUpdate(fullText);
+                }
+            } catch (e) {
+                // Ignore parse errors for incomplete chunks
+            }
+        }
+    }
+
+    return fullText;
+}
+
+export async function streamExplanationFromDeepseek(apiKey, model, request, onUpdate) {
+    const systemPrompt = appendChineseInstruction("You are an expert security researcher and web developer. Explain the following HTTP request in detail, highlighting interesting parameters, potential security implications, and what this request is likely doing. Be concise but thorough.");
+
+    return streamDeepseekChat(
+        apiKey,
+        {
+            model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `Explain this HTTP request:\n\n${request}` }
+            ]
+        },
+        onUpdate
+    );
+}
+
+export async function streamExplanationFromDeepseekWithSystem(apiKey, model, systemPrompt, userPrompt, onUpdate) {
+    const adjustedSystemPrompt = appendChineseInstruction(systemPrompt);
+    return streamDeepseekChat(
+        apiKey,
+        {
+            model,
+            messages: [
+                { role: 'system', content: adjustedSystemPrompt },
+                { role: 'user', content: userPrompt }
+            ]
+        },
+        onUpdate
+    );
+}
+
 /**
  * Stream chat from Claude with proper message history
  */
 export async function streamChatFromClaudeWithMessages(apiKey, model, messages, onUpdate) {
     // Separate system message from conversation messages
     const systemMessage = messages.find(m => m.role === 'system');
+    const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : CHINESE_RESPONSE_INSTRUCTION;
     const conversationMessages = messages.filter(m => m.role !== 'system');
     
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -293,7 +413,7 @@ export async function streamChatFromClaudeWithMessages(apiKey, model, messages, 
         body: JSON.stringify({
             model: model,
             max_tokens: 4096,
-            system: systemMessage?.content || '',
+            system: systemPrompt,
             stream: true,
             messages: conversationMessages
         })
@@ -337,6 +457,25 @@ export async function streamChatFromClaudeWithMessages(apiKey, model, messages, 
 }
 
 /**
+ * Stream chat from DeepSeek with proper message history
+ */
+export async function streamChatFromDeepseekWithMessages(apiKey, model, messages, onUpdate) {
+    const adjustedMessages = messages.map(message => {
+        if (message.role !== 'system') return message;
+        return { ...message, content: appendChineseInstruction(message.content) };
+    });
+
+    return streamDeepseekChat(
+        apiKey,
+        {
+            model,
+            messages: adjustedMessages
+        },
+        onUpdate
+    );
+}
+
+/**
  * Stream chat from Gemini with proper message history
  * Note: Gemini API has different format, we'll convert messages to their format
  */
@@ -344,6 +483,7 @@ export async function streamChatFromGeminiWithMessages(apiKey, model, messages, 
     // Gemini uses a different format - convert messages
     // System message is prepended to first user message
     const systemMessage = messages.find(m => m.role === 'system');
+    const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : CHINESE_RESPONSE_INSTRUCTION;
     const conversationMessages = messages.filter(m => m.role !== 'system');
     
     // Build contents array for Gemini (alternating user/model)
@@ -352,8 +492,8 @@ export async function streamChatFromGeminiWithMessages(apiKey, model, messages, 
     for (const msg of conversationMessages) {
         if (msg.role === 'user') {
             // Add system prompt to first user message if available
-            const text = (contents.length === 0 && systemMessage) 
-                ? `${systemMessage.content}\n\n${msg.content}`
+            const text = contents.length === 0
+                ? `${systemPrompt}\n\n${msg.content}`
                 : msg.content;
             contents.push({ role: 'user', parts: [{ text }] });
         } else if (msg.role === 'assistant') {
@@ -417,7 +557,7 @@ export async function streamChatFromGeminiWithMessages(apiKey, model, messages, 
 }
 
 export async function streamExplanationFromGemini(apiKey, model, request, onUpdate) {
-    const systemPrompt = "You are an expert security researcher and web developer. Explain the following HTTP request in detail, highlighting interesting parameters, potential security implications, and what this request is likely doing. Be concise but thorough.";
+    const systemPrompt = appendChineseInstruction("You are an expert security researcher and web developer. Explain the following HTTP request in detail, highlighting interesting parameters, potential security implications, and what this request is likely doing. Be concise but thorough.");
 
     const prompt = `${systemPrompt}\n\nExplain this HTTP request:\n\n${request}`;
 
@@ -479,7 +619,7 @@ export async function streamExplanationFromGemini(apiKey, model, request, onUpda
 }
 
 export async function streamExplanationFromGeminiWithSystem(apiKey, model, systemPrompt, userPrompt, onUpdate) {
-    const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`;
+    const combinedPrompt = `${appendChineseInstruction(systemPrompt)}\n\n${userPrompt}`;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`, {
         method: 'POST',
@@ -604,7 +744,7 @@ function getOrCreatePort() {
 }
 
 export async function streamExplanationFromLocal(apiUrl, model, request, onUpdate) {
-    const systemPrompt = "You are an expert security researcher and web developer. Explain the following HTTP request in detail, highlighting interesting parameters, potential security implications, and what this request is likely doing. Be concise but thorough.";
+    const systemPrompt = appendChineseInstruction("You are an expert security researcher and web developer. Explain the following HTTP request in detail, highlighting interesting parameters, potential security implications, and what this request is likely doing. Be concise but thorough.");
     const prompt = `${systemPrompt}\n\nExplain this HTTP request:\n\n${request}`;
 
     // Use background service worker to proxy the request (bypasses CORS)
@@ -741,7 +881,7 @@ export async function streamExplanationFromLocal(apiUrl, model, request, onUpdat
 
 export async function streamExplanationFromLocalWithSystem(apiUrl, model, systemPrompt, userPrompt, onUpdate) {
     // Combine system prompt and user prompt for local models that don't support system messages
-    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+    const prompt = `${appendChineseInstruction(systemPrompt)}\n\n${userPrompt}`;
 
     // Use background service worker to proxy the request (bypasses CORS)
     return new Promise((resolve, reject) => {
@@ -887,14 +1027,15 @@ export async function streamChatFromLocalWithMessages(apiKey, model, messages, o
         // Convert messages to Ollama format
         // Ollama expects: { model, messages: [{ role, content }], stream: true }
         const systemMessage = messages.find(m => m.role === 'system');
+        const systemPrompt = systemMessage ? appendChineseInstruction(systemMessage.content) : CHINESE_RESPONSE_INSTRUCTION;
         const conversationMessages = messages.filter(m => m.role !== 'system');
         
         // Prepend system message to first user message if available
         const formattedMessages = conversationMessages.map((msg, index) => {
-            if (index === 0 && msg.role === 'user' && systemMessage) {
+            if (index === 0 && msg.role === 'user') {
                 return {
                     role: 'user',
-                    content: `${systemMessage.content}\n\n${msg.content}`
+                    content: `${systemPrompt}\n\n${msg.content}`
                 };
             }
             return { role: msg.role, content: msg.content };
