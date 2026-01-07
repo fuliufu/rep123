@@ -3776,7 +3776,15 @@ pre {
 
 #res-json-display {
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    scrollbar-color: transparent transparent;
+}
+
+#res-json-display::-webkit-scrollbar {
+    width: 0;
+    height: 0;
 }
 
 /* Theme Selector */

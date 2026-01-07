@@ -6,9 +6,12 @@
     line-height: 1.5;
     color: #333;
     padding: 10px;
-    overflow-x: hidden !important;
+    overflow-x: auto;
     overflow-y: auto;
     max-width: 100%;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    scrollbar-color: transparent transparent;
 }
 
 .json-string {
@@ -144,5 +147,14 @@
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
-    overflow-x: hidden !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    scrollbar-color: transparent transparent;
+}
+
+.json-formatter-container::-webkit-scrollbar,
+.json-raw-content::-webkit-scrollbar {
+    width: 0;
+    height: 0;
 }
