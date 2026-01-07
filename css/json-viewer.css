@@ -6,7 +6,7 @@
     line-height: 1.5;
     color: #333;
     padding: 10px;
-    overflow-x: auto;
+    overflow-x: hidden !important;
     overflow-y: auto;
     max-width: 100%;
 }
@@ -144,5 +144,5 @@
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
-    overflow-x: auto;
+    overflow-x: hidden !important;
 }
